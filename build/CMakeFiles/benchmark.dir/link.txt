@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/benchmark.dir/benchmark_sha256_groth16.cpp.o -o benchmark  libsnark/libsnark/libsnark.a libsnark/depends/libff/libff/libff.a -lgmp /usr/lib/x86_64-linux-gnu/libgmp.so /usr/lib/x86_64-linux-gnu/libgmp.so /usr/lib/x86_64-linux-gnu/libgmpxx.so -lcrypto libsnark/depends/libzm.a 
