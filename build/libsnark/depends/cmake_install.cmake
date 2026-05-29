@@ -1,4 +1,4 @@
-# Install script for directory: /home/cray/바탕화면/zkp_code/libsnark/depends
+# Install script for directory: /home/ubuntu/zkp_test/libsnark_modified/libsnark/depends
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -44,8 +44,8 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
-  include("/home/cray/바탕화면/zkp_code/build/libsnark/depends/libff/cmake_install.cmake")
-  include("/home/cray/바탕화면/zkp_code/build/libsnark/depends/libfqfft/cmake_install.cmake")
+  include("/home/ubuntu/zkp_test/libsnark_modified/build/libsnark/depends/libff/cmake_install.cmake")
+  include("/home/ubuntu/zkp_test/libsnark_modified/build/libsnark/depends/libfqfft/cmake_install.cmake")
 
 endif()
 

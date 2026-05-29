@@ -8,16 +8,11 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/cray/바탕화면/zkp_code/libsnark/depends/ate-pairing/src/zm.cpp" "libsnark/depends/CMakeFiles/zm.dir/ate-pairing/src/zm.cpp.o" "gcc" "libsnark/depends/CMakeFiles/zm.dir/ate-pairing/src/zm.cpp.o.d"
-  "/home/cray/바탕화면/zkp_code/libsnark/depends/ate-pairing/src/zm2.cpp" "libsnark/depends/CMakeFiles/zm.dir/ate-pairing/src/zm2.cpp.o" "gcc" "libsnark/depends/CMakeFiles/zm.dir/ate-pairing/src/zm2.cpp.o.d"
+  "/home/ubuntu/zkp_test/libsnark_modified/libsnark/depends/ate-pairing/src/zm.cpp" "libsnark/depends/CMakeFiles/zm.dir/ate-pairing/src/zm.cpp.o" "gcc" "libsnark/depends/CMakeFiles/zm.dir/ate-pairing/src/zm.cpp.o.d"
   )
 
-# Targets to which this target links which contain Fortran sources.
-set(CMAKE_Fortran_TARGET_LINKED_INFO_FILES
-  )
-
-# Targets to which this target links which contain Fortran sources.
-set(CMAKE_Fortran_TARGET_FORWARD_LINKED_INFO_FILES
+# Targets to which this target links.
+set(CMAKE_TARGET_LINKED_INFO_FILES
   )
 
 # Fortran module output directory.

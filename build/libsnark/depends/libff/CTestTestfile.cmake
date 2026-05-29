@@ -1,6 +1,6 @@
 # CMake generated Testfile for 
-# Source directory: /home/cray/바탕화면/zkp_code/libsnark/depends/libff
-# Build directory: /home/cray/바탕화면/zkp_code/build/libsnark/depends/libff
+# Source directory: /home/ubuntu/zkp_test/libsnark_modified/libsnark/depends/libff
+# Build directory: /home/ubuntu/zkp_test/libsnark_modified/build/libsnark/depends/libff
 # 
 # This file includes the relevant testing commands required for 
 # testing this directory and lists subdirectories to be tested as well.

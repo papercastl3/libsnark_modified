@@ -1,4 +1,4 @@
-# Install script for directory: /home/cray/바탕화면/zkp_code/libsnark/depends/gtest/googlemock
+# Install script for directory: /home/ubuntu/zkp_test/libsnark_modified/libsnark/depends/gtest/googlemock
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -42,28 +42,28 @@ if(NOT DEFINED CMAKE_OBJDUMP)
   set(CMAKE_OBJDUMP "/usr/bin/objdump")
 endif()
 
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/cray/바탕화면/zkp_code/build/libsnark/depends/gtest/googlemock/libgmock.a")
+if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/ubuntu/zkp_test/libsnark_modified/build/libsnark/depends/gtest/googlemock/libgmock.a")
 endif()
 
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/cray/바탕화면/zkp_code/build/libsnark/depends/gtest/googlemock/libgmock_main.a")
+if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/ubuntu/zkp_test/libsnark_modified/build/libsnark/depends/gtest/googlemock/libgmock_main.a")
 endif()
 
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE DIRECTORY FILES "/home/cray/바탕화면/zkp_code/libsnark/depends/gtest/googlemock/include/gmock")
+if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE DIRECTORY FILES "/home/ubuntu/zkp_test/libsnark_modified/libsnark/depends/gtest/googlemock/include/gmock")
 endif()
 
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
+if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES
-    "/home/cray/바탕화면/zkp_code/build/gmock.pc"
-    "/home/cray/바탕화면/zkp_code/build/gmock_main.pc"
+    "/home/ubuntu/zkp_test/libsnark_modified/build/gmock.pc"
+    "/home/ubuntu/zkp_test/libsnark_modified/build/gmock_main.pc"
     )
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
-  include("/home/cray/바탕화면/zkp_code/build/libsnark/depends/gtest/googlemock/gtest/cmake_install.cmake")
+  include("/home/ubuntu/zkp_test/libsnark_modified/build/libsnark/depends/gtest/googlemock/gtest/cmake_install.cmake")
 
 endif()
 

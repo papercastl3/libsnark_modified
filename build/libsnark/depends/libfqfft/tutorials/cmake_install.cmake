@@ -1,4 +1,4 @@
-# Install script for directory: /home/cray/바탕화면/zkp_code/libsnark/depends/libfqfft/tutorials
+# Install script for directory: /home/ubuntu/zkp_test/libsnark_modified/libsnark/depends/libfqfft/tutorials
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

@@ -4,14 +4,14 @@
 
 
 # Configuration directories and files
-SourceDirectory: /home/cray/바탕화면/zkp_code/libsnark
-BuildDirectory: /home/cray/바탕화면/zkp_code/build/libsnark
+SourceDirectory: /home/ubuntu/zkp_test/libsnark_modified/libsnark
+BuildDirectory: /home/ubuntu/zkp_test/libsnark_modified/build/libsnark
 
 # Where to place the cost data store
 CostDataFile: 
 
 # Site is something like machine.domain, i.e. pragmatic.crd
-Site: cray-VMware-Virtual-Platform
+Site: kria
 
 # Build name is osname-revision-compiler, i.e. Linux-2.4.2-2smp-c++
 BuildName: Linux-c++
@@ -21,13 +21,12 @@ LabelsForSubprojects:
 
 # Submission information
 SubmitURL: http://
-SubmitInactivityTimeout: 
 
 # Dashboard start time
 NightlyStartTime: 00:00:00 EDT
 
 # Commands for the build/test/submit cycle
-ConfigureCommand: "/usr/bin/cmake" "/home/cray/바탕화면/zkp_code/libsnark"
+ConfigureCommand: "/usr/bin/cmake" "/home/ubuntu/zkp_test/libsnark_modified/libsnark"
 MakeCommand: /usr/bin/cmake --build . --config "${CTEST_CONFIGURATION_TYPE}" -- -i
 DefaultCTestConfigurationType: Release
 
@@ -64,7 +63,7 @@ UpdateType:
 
 # Compiler info
 Compiler: /usr/bin/c++
-CompilerVersion: 13.3.0
+CompilerVersion: 11.4.0
 
 # Dynamic analysis (MemCheck)
 PurifyCommand: 
