@@ -17,10 +17,13 @@
 #include <algorithm>
 #include <cassert>
 #include <type_traits>
-#include <typeinfo>  // 🌟 런타임 타입 체크용 필수 헤더
-#include <string>    // 🌟 문자열 처리용
-#include <fstream>   // 🌟 가속기 입력 데이터(.hex) 저장용
+#include <typeinfo>
+#include <string>    
+#include <fstream>  
 #include <iostream>
+#include <utility>
+#include <vector>
+#include <cstdlib> // std::system 호출을 위해 반드시 추가!
 
 #include <libff/algebra/fields/bigint.hpp>
 #include <libff/algebra/fields/fp_aux.tcc>
@@ -404,7 +407,13 @@ T multi_exp_inner(
     return opt_result;
 }
 
-// FPGA를 활용한 G1 MSM 가속
+
+#include <fstream>
+#include <string>
+#include <vector>
+#include <utility>
+#include <cstdlib>
+
 template<typename G1_PointT, typename ScalarFieldT>
 G1_PointT multi_exp_g1_prove_fpga(
     typename std::vector<G1_PointT>::const_iterator vec_start,
@@ -420,16 +429,12 @@ G1_PointT multi_exp_g1_prove_fpga(
         return G1_PointT::zero();
     }
 
-    // 💡 1. libff의 템플릿 맹점 우회: decltype을 사용하여 실제 객체의 X좌표에서 타입을 직접 추론합니다.
     using BaseFieldT = typename std::decay<decltype(vec_start->X)>::type;
     using BaseBigIntT = decltype(vec_start->X.as_bigint());
     using ScalarBigIntT = decltype(scalar_start->as_bigint());
 
-    // 💡 2. libff의 거듭제곱 연산자는 .pow()가 아닌 '^' 를 사용합니다.
-    static const ScalarFieldT scalar_R255 = ScalarFieldT(2) ^ 255;
     static const BaseFieldT base_R255 = BaseFieldT(2) ^ 255;
 
-    // SG-DMA 매핑을 위한 Flat 구조체 배열 할당 (추론된 BigInt 타입 사용)
     std::vector<BaseBigIntT> dma_points_X(length);
     std::vector<BaseBigIntT> dma_points_Y(length);
     std::vector<ScalarBigIntT> dma_scalars(length);
@@ -441,62 +446,141 @@ G1_PointT multi_exp_g1_prove_fpga(
     #pragma omp parallel for
     #endif
     for (size_t i = 0; i < length; ++i) {
-        // R=2^255 스케일링 후 .as_bigint()를 호출하여 로우 정수 스트림 생성
-        dma_scalars[i]  = (scalar_start[i] * scalar_R255).as_bigint();
-        dma_points_X[i] = (affine_bases[i].X * base_R255).as_bigint();
-        dma_points_Y[i] = (affine_bases[i].Y * base_R255).as_bigint();
+        // 🌟 핵심 방어 로직: 해당 점이 항등원(Infinity)이라면 하드웨어가 무시하도록 스칼라를 0으로 강제 세팅
+        if (affine_bases[i].is_zero()) {
+            // 컴파일러의 타입 추론 모호성을 피하기 위해 명시적으로 0UL(Unsigned Long)을 사용합니다.
+            dma_scalars[i]  = 0UL;
+            dma_points_X[i] = 0UL;
+            dma_points_Y[i] = 0UL;
+        } else {
+            dma_scalars[i]  = scalar_start[i].as_bigint();
+            dma_points_X[i] = (affine_bases[i].X * base_R255).as_bigint();
+            dma_points_Y[i] = (affine_bases[i].Y * base_R255).as_bigint();
+        }
     }
 
-    // ---------------------------------------------------------------------
-    // ⚙️ [독립형 FPGA 하드웨어 실행 제어 블록]
-    // ---------------------------------------------------------------------
+    // =====================================================================
+    // 💾 1. [인풋 평탄화 및 txt 덤프 (Python 입력용)]
+    // =====================================================================
+    enter_block("Dump FPGA testbench vectors");
+    std::ofstream file_scalar("msm_input_scalar.txt");
+    std::ofstream file_point_x("msm_input_x.txt");
+    std::ofstream file_point_y("msm_input_y.txt");
+
+    if (file_scalar.is_open() && file_point_x.is_open() && file_point_y.is_open()) {
+        for (size_t i = 0; i < length; ++i) {
+            file_scalar  << dma_scalars[i]  << "\n";
+            file_point_x << dma_points_X[i] << "\n";
+            file_point_y << dma_points_Y[i] << "\n";
+        }
+        file_scalar.close(); file_point_x.close(); file_point_y.close();
+        print_indent(); printf("💾 [C++] 입력 데이터 %zu개 txt 덤프 완료.\n", length);
+    } else {
+        print_indent(); printf("⚠️ [C++ 오류] txt 파일을 생성할 수 없습니다.\n");
+    }
+    leave_block("Dump FPGA testbench vectors");
+
+    // =====================================================================
+    // 🚀 2. [진정한 MIL 검증: C++ 내부에서 Python 모델 동기적 실행]
+    // =====================================================================
+    enter_block("Run Python Golden Model (Co-simulation)");
+    print_indent(); printf("🐍 [System] Python 하드웨어 에뮬레이터를 구동하여 최신 버킷을 생성합니다...\n");
+    
+    int ret = std::system("python3 msm_fpga_emu.py > python_emu.log 2>&1"); 
+    
+    if (ret != 0) {
+        print_indent(); printf("⚠️ [오류] Python 스크립트 실행 실패!\n");
+    } else {
+        print_indent(); printf("✅ [성공] Python 야코비안 버킷 누적 완료 (결과 덤프됨).\n");
+    }
+    leave_block("Run Python Golden Model (Co-simulation)");
+
+    // =====================================================================
+    // ⚙️ 3. [하드웨어 실행 제어 구조체 선언]
+    // =====================================================================
     const size_t WINDOW_COUNT = 24;
     const size_t BITS_PER_WINDOW = 11;
     const size_t BUCKETS_PER_WINDOW = 1 << BITS_PER_WINDOW;
 
-    // 수신 버퍼 구조체 (명시적으로 추론된 BigInt 타입 사용)
-    struct FpgaRawAffine {
+    struct FpgaRawJacobian {
         BaseBigIntT X;
         BaseBigIntT Y;
+        BaseBigIntT Z;
     };
     
-    std::vector<std::vector<FpgaRawAffine>> fpga_buckets(
-        WINDOW_COUNT, std::vector<FpgaRawAffine>(BUCKETS_PER_WINDOW)
+    std::vector<std::vector<FpgaRawJacobian>> fpga_buckets(
+        WINDOW_COUNT, std::vector<FpgaRawJacobian>(BUCKETS_PER_WINDOW)
     );
 
     // =====================================================================
-    // TODO: SG-DMA 읽기/쓰기 및 인터럽트 대기
+    // 📥 4. [Python 생성 야코비안 버킷 파일 로드 (DMA 수신 모사)]
     // =====================================================================
+    enter_block("Load FPGA buckets from Python model");
+    std::ifstream file_bx("buckets_X.txt");
+    std::ifstream file_by("buckets_Y.txt");
+    std::ifstream file_bz("buckets_Z.txt");
+    
+    if (file_bx.is_open() && file_by.is_open() && file_bz.is_open()) {
+        std::string str_x, str_y, str_z;
+        for (size_t w = 0; w < WINDOW_COUNT; ++w) {
+            for (size_t b = 0; b < BUCKETS_PER_WINDOW; ++b) {
+                file_bx >> str_x;
+                file_by >> str_y;
+                file_bz >> str_z;
+                
+                fpga_buckets[w][b].X = BaseBigIntT(str_x.c_str());
+                fpga_buckets[w][b].Y = BaseBigIntT(str_y.c_str());
+                fpga_buckets[w][b].Z = BaseBigIntT(str_z.c_str());
+            }
+        }
+        file_bx.close(); file_by.close(); file_bz.close();
+        print_indent(); printf("📥 [C++] Python 최신 야코비안 버킷 데이터 로드 완료.\n");
+    } else {
+        print_indent(); printf("⚠️ [C++ 알림] buckets_*.txt 파일 로드 실패.\n");
+    }
+    leave_block("Load FPGA buckets from Python model");
 
-    // ---------------------------------------------------------------------
-    // 2️⃣ [FPGA -> Host 복원] 가속기 버킷 포맷을 libff 도메인으로 인코딩
-    // ---------------------------------------------------------------------
-    // 💡 거듭제곱 연산자 수정 및 inverse 적용
+    // =====================================================================
+    // 🔄 5. [도메인 복원 및 대규모 일괄 아핀(Affine) 변환]
+    // =====================================================================
     static const BaseFieldT inv_R255 = (BaseFieldT(2) ^ 255).inverse();
     
     std::vector<std::vector<G1_PointT>> window_buckets(
         WINDOW_COUNT, std::vector<G1_PointT>(BUCKETS_PER_WINDOW, G1_PointT::zero())
     );
 
-    #ifdef MULTICORE
-    #pragma omp parallel for collapse(2)
-    #endif
+    std::vector<G1_PointT> active_buckets;
+    std::vector<std::pair<size_t, size_t>> active_indices;
+    
+    active_buckets.reserve(WINDOW_COUNT * BUCKETS_PER_WINDOW);
+    active_indices.reserve(WINDOW_COUNT * BUCKETS_PER_WINDOW);
+
     for (size_t w = 0; w < WINDOW_COUNT; ++w) {
         for (size_t b = 1; b < BUCKETS_PER_WINDOW; ++b) {
-            if (fpga_buckets[w][b].X.is_zero() && fpga_buckets[w][b].Y.is_zero()) {
-                continue;
-            }
+            if (fpga_buckets[w][b].Z.is_zero()) continue;
 
             BaseFieldT restored_X = BaseFieldT(fpga_buckets[w][b].X) * inv_R255;
             BaseFieldT restored_Y = BaseFieldT(fpga_buckets[w][b].Y) * inv_R255;
+            BaseFieldT restored_Z = BaseFieldT(fpga_buckets[w][b].Z) * inv_R255;
 
-            window_buckets[w][b] = G1_PointT(restored_X, restored_Y, BaseFieldT::one());
+            active_buckets.emplace_back(G1_PointT(restored_X, restored_Y, restored_Z));
+            active_indices.emplace_back(w, b);
         }
     }
 
-    // ---------------------------------------------------------------------
-    // 3️⃣ [소프트웨어 리덕션] CPU 멀티코어를 활용한 Pippenger 버킷 누적 루프
-    // ---------------------------------------------------------------------
+    if (!active_buckets.empty()) {
+        batch_to_special(active_buckets);
+    }
+
+    for (size_t i = 0; i < active_buckets.size(); ++i) {
+        size_t w = active_indices[i].first;
+        size_t b = active_indices[i].second;
+        window_buckets[w][b] = active_buckets[i];
+    }
+
+    // =====================================================================
+    // 🧮 6. [소프트웨어 리덕션 (Pippenger 누적)]
+    // =====================================================================
     std::vector<G1_PointT> window_results(WINDOW_COUNT, G1_PointT::zero());
 
     #ifdef MULTICORE
@@ -505,15 +589,14 @@ G1_PointT multi_exp_g1_prove_fpga(
     for (size_t w = 0; w < WINDOW_COUNT; ++w) {
         G1_PointT running_sum = G1_PointT::zero();
         G1_PointT window_sum = G1_PointT::zero();
-        bool running_sum_nonzero = false;
-        bool window_sum_nonzero = false;
+        bool running_sum_nonzero = false, window_sum_nonzero = false;
 
         for (size_t b = BUCKETS_PER_WINDOW - 1; b > 0; --b) {
             if (!window_buckets[w][b].is_zero()) {
                 if (running_sum_nonzero) {
                     running_sum = running_sum + window_buckets[w][b];
                 } else {
-                    running_sum = window_buckets[w][b];
+                    running_sum = window_buckets[w][b]; 
                     running_sum_nonzero = true;
                 }
             }
@@ -522,7 +605,7 @@ G1_PointT multi_exp_g1_prove_fpga(
                 if (window_sum_nonzero) {
                     window_sum = window_sum + running_sum;
                 } else {
-                    window_sum = running_sum;
+                    window_sum = running_sum; 
                     window_sum_nonzero = true;
                 }
             }
@@ -530,9 +613,9 @@ G1_PointT multi_exp_g1_prove_fpga(
         window_results[w] = window_sum;
     }
 
-    // ---------------------------------------------------------------------
-    // 4️⃣ [최종 어그리게이션] Horner's Method를 적용한 윈도우 간 비트 병합
-    // ---------------------------------------------------------------------
+    // =====================================================================
+    // 🔗 7. [최종 어그리게이션 (Horner's Method)]
+    // =====================================================================
     G1_PointT final_result = G1_PointT::zero();
     bool final_nonzero = false;
 
@@ -542,16 +625,26 @@ G1_PointT multi_exp_g1_prove_fpga(
                 final_result = final_result.dbl();
             }
         }
-
         if (!window_results[w].is_zero()) {
             if (final_nonzero) {
                 final_result = final_result + window_results[w];
             } else {
-                final_result = window_results[w];
+                final_result = window_results[w]; 
                 final_nonzero = true;
             }
         }
     }
+
+    // =====================================================================
+    // 🏁 8. [최종 검증 및 출력]
+    // =====================================================================
+    final_result.to_affine_coordinates();
+    
+    printf("\n==============================================\n");
+    printf(" 🏁 [C++ 복원 및 리덕션] 최종 산출 좌표\n");
+    printf(" X: "); final_result.X.print(); 
+    printf(" Y: "); final_result.Y.print(); 
+    printf("==============================================\n\n");
 
     return final_result;
 }

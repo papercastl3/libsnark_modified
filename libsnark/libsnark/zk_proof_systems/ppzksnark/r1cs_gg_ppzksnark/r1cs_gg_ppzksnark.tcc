@@ -448,7 +448,7 @@ r1cs_gg_ppzksnark_proof<ppT> r1cs_gg_ppzksnark_prover(const r1cs_gg_ppzksnark_pr
         const_padded_assignment.begin(),
         const_padded_assignment.begin() + qap_wit.num_variables() + 1,
         chunks, 
-        false);
+        true);
     libff::leave_block("Compute evaluation to A-query", false);
 
     libff::enter_block("Compute evaluation to B-query", false);
@@ -485,7 +485,7 @@ r1cs_gg_ppzksnark_proof<ppT> r1cs_gg_ppzksnark_prover(const r1cs_gg_ppzksnark_pr
         const_padded_assignment.begin() + qap_wit.num_inputs() + 1,
         const_padded_assignment.begin() + qap_wit.num_variables() + 1,
         chunks,
-        false);
+        true);
     libff::leave_block("Compute evaluation to L-query", false);
 
     /* A = alpha + sum_i(a_i*A_i(t)) + r*delta */
