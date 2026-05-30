@@ -407,13 +407,6 @@ T multi_exp_inner(
     return opt_result;
 }
 
-
-#include <fstream>
-#include <string>
-#include <vector>
-#include <utility>
-#include <cstdlib>
-
 template<typename G1_PointT, typename ScalarFieldT>
 G1_PointT multi_exp_g1_prove_fpga(
     typename std::vector<G1_PointT>::const_iterator vec_start,
