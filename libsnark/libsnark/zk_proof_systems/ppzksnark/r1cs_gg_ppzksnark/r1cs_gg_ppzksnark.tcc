@@ -390,7 +390,8 @@ r1cs_gg_ppzksnark_keypair<ppT> r1cs_gg_ppzksnark_generator(const r1cs_gg_ppzksna
 template <typename ppT>
 r1cs_gg_ppzksnark_proof<ppT> r1cs_gg_ppzksnark_prover(const r1cs_gg_ppzksnark_proving_key<ppT> &pk,
                                                       const r1cs_gg_ppzksnark_primary_input<ppT> &primary_input,
-                                                      const r1cs_gg_ppzksnark_auxiliary_input<ppT> &auxiliary_input)
+                                                      const r1cs_gg_ppzksnark_auxiliary_input<ppT> &auxiliary_input 
+                                                      )
 {
     libff::enter_block("Call to r1cs_gg_ppzksnark_prover");
 
@@ -420,7 +421,7 @@ r1cs_gg_ppzksnark_proof<ppT> r1cs_gg_ppzksnark_prover(const r1cs_gg_ppzksnark_pr
 
 #ifdef DEBUG
     assert(qap_wit.coefficients_for_ABCs.size() == qap_wit.num_variables());
-    assert(pk.A_query.size() == qap_wit.num_variables()+1);
+    assert(pk.A_query.size() == qap_wit.num_variabfles()+1);
     assert(pk.B_query.domain_size() == qap_wit.num_variables()+1);
     assert(pk.H_query.size() == qap_wit.degree() - 1);
     assert(pk.L_query.size() == qap_wit.num_variables() - qap_wit.num_inputs());
@@ -446,7 +447,8 @@ r1cs_gg_ppzksnark_proof<ppT> r1cs_gg_ppzksnark_prover(const r1cs_gg_ppzksnark_pr
         pk.A_query.begin() + qap_wit.num_variables() + 1,
         const_padded_assignment.begin(),
         const_padded_assignment.begin() + qap_wit.num_variables() + 1,
-        chunks);
+        chunks, 
+        false);
     libff::leave_block("Compute evaluation to A-query", false);
 
     libff::enter_block("Compute evaluation to B-query", false);
@@ -463,14 +465,15 @@ r1cs_gg_ppzksnark_proof<ppT> r1cs_gg_ppzksnark_prover(const r1cs_gg_ppzksnark_pr
     libff::leave_block("Compute evaluation to B-query", false);
 
     libff::enter_block("Compute evaluation to H-query", false);
-    libff::G1<ppT> evaluation_Ht = libff::multi_exp<libff::G1<ppT>,
+    libff::G1<ppT> evaluation_Ht = libff::multi_exp_with_mixed_addition<libff::G1<ppT>,
                                                     libff::Fr<ppT>,
                                                     libff::multi_exp_method_BDLO12>(
         pk.H_query.begin(),
         pk.H_query.begin() + (qap_wit.degree() - 1),
         qap_wit.coefficients_for_H.begin(),
         qap_wit.coefficients_for_H.begin() + (qap_wit.degree() - 1),
-        chunks);
+        chunks,
+        true);
     libff::leave_block("Compute evaluation to H-query", false);
 
     libff::enter_block("Compute evaluation to L-query", false);
@@ -481,7 +484,8 @@ r1cs_gg_ppzksnark_proof<ppT> r1cs_gg_ppzksnark_prover(const r1cs_gg_ppzksnark_pr
         pk.L_query.end(),
         const_padded_assignment.begin() + qap_wit.num_inputs() + 1,
         const_padded_assignment.begin() + qap_wit.num_variables() + 1,
-        chunks);
+        chunks,
+        false);
     libff::leave_block("Compute evaluation to L-query", false);
 
     /* A = alpha + sum_i(a_i*A_i(t)) + r*delta */

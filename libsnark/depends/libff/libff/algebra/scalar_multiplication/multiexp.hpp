@@ -61,20 +61,31 @@ T multi_exp(typename std::vector<T>::const_iterator vec_start,
             const size_t chunks);
 
 
+// G1 MSM FPGA를 이용한 가속
+template<typename G1_PointT, typename ScalarFieldT>
+G1_PointT multi_exp_g1_prove_fpga(
+            typename std::vector<G1_PointT>::const_iterator vec_start,
+            typename std::vector<G1_PointT>::const_iterator vec_end,
+            typename std::vector<ScalarFieldT>::const_iterator scalar_start,
+            typename std::vector<ScalarFieldT>::const_iterator scalar_end,
+            const size_t chunks);            
+
 /**
  * A variant of multi_exp that takes advantage of the method mixed_add (instead
  * of the operator '+').
  * Assumes input is in special form, and includes special pre-processing for
  * scalars equal to 0 or 1.
  */
+
+// 스칼라 1과 0 필터링 및 MSM 연산 호출
 template<typename T, typename FieldT, multi_exp_method Method>
 T multi_exp_with_mixed_addition(typename std::vector<T>::const_iterator vec_start,
                                 typename std::vector<T>::const_iterator vec_end,
                                 typename std::vector<FieldT>::const_iterator scalar_start,
                                 typename std::vector<FieldT>::const_iterator scalar_end,
-                                const size_t chunks);
-
-/**
+                                const size_t chunks, 
+                                bool useFPGA = false);
+/** 
  * A convenience function for calculating a pure inner product, where the
  * more complicated methods are not required.
  */

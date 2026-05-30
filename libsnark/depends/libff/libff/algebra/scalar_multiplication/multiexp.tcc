@@ -20,6 +20,7 @@
 #include <typeinfo>  // 🌟 런타임 타입 체크용 필수 헤더
 #include <string>    // 🌟 문자열 처리용
 #include <fstream>   // 🌟 가속기 입력 데이터(.hex) 저장용
+#include <iostream>
 
 #include <libff/algebra/fields/bigint.hpp>
 #include <libff/algebra/fields/fp_aux.tcc>
@@ -143,6 +144,7 @@ T multi_exp_inner(
     return result;
 }
 
+
 template<typename T, typename FieldT, multi_exp_method Method,
     typename std::enable_if<(Method == multi_exp_method_naive_plain), int>::type = 0>
 T multi_exp_inner(
@@ -165,6 +167,7 @@ T multi_exp_inner(
     return result;
 }
 
+
 template<typename T, typename FieldT, multi_exp_method Method,
     typename std::enable_if<(Method == multi_exp_method_BDLO12), int>::type = 0>
 T multi_exp_inner(
@@ -175,8 +178,6 @@ T multi_exp_inner(
 {
     UNUSED(exponents_end);
     size_t length = bases_end - bases;
-
-    // empirically, this seems to be a decent estimate of the optimal value of c
     size_t log2_length = log2(length);
     size_t c = log2_length - (log2_length / 3 - 2);
 
@@ -283,6 +284,7 @@ T multi_exp_inner(
 
     return result;
 }
+
 
 template<typename T, typename FieldT, multi_exp_method Method,
     typename std::enable_if<(Method == multi_exp_method_bos_coster), int>::type = 0>
@@ -402,6 +404,158 @@ T multi_exp_inner(
     return opt_result;
 }
 
+// FPGA를 활용한 G1 MSM 가속
+template<typename G1_PointT, typename ScalarFieldT>
+G1_PointT multi_exp_g1_prove_fpga(
+    typename std::vector<G1_PointT>::const_iterator vec_start,
+    typename std::vector<G1_PointT>::const_iterator vec_end,
+    typename std::vector<ScalarFieldT>::const_iterator scalar_start,
+    typename std::vector<ScalarFieldT>::const_iterator scalar_end,
+    const size_t chunks)
+{
+    libff::UNUSED(chunks);
+
+    const size_t length = vec_end - vec_start;
+    if (length == 0) {
+        return G1_PointT::zero();
+    }
+
+    // 💡 1. libff의 템플릿 맹점 우회: decltype을 사용하여 실제 객체의 X좌표에서 타입을 직접 추론합니다.
+    using BaseFieldT = typename std::decay<decltype(vec_start->X)>::type;
+    using BaseBigIntT = decltype(vec_start->X.as_bigint());
+    using ScalarBigIntT = decltype(scalar_start->as_bigint());
+
+    // 💡 2. libff의 거듭제곱 연산자는 .pow()가 아닌 '^' 를 사용합니다.
+    static const ScalarFieldT scalar_R255 = ScalarFieldT(2) ^ 255;
+    static const BaseFieldT base_R255 = BaseFieldT(2) ^ 255;
+
+    // SG-DMA 매핑을 위한 Flat 구조체 배열 할당 (추론된 BigInt 타입 사용)
+    std::vector<BaseBigIntT> dma_points_X(length);
+    std::vector<BaseBigIntT> dma_points_Y(length);
+    std::vector<ScalarBigIntT> dma_scalars(length);
+
+    std::vector<G1_PointT> affine_bases(vec_start, vec_end);
+    batch_to_special(affine_bases);
+
+    #ifdef MULTICORE
+    #pragma omp parallel for
+    #endif
+    for (size_t i = 0; i < length; ++i) {
+        // R=2^255 스케일링 후 .as_bigint()를 호출하여 로우 정수 스트림 생성
+        dma_scalars[i]  = (scalar_start[i] * scalar_R255).as_bigint();
+        dma_points_X[i] = (affine_bases[i].X * base_R255).as_bigint();
+        dma_points_Y[i] = (affine_bases[i].Y * base_R255).as_bigint();
+    }
+
+    // ---------------------------------------------------------------------
+    // ⚙️ [독립형 FPGA 하드웨어 실행 제어 블록]
+    // ---------------------------------------------------------------------
+    const size_t WINDOW_COUNT = 24;
+    const size_t BITS_PER_WINDOW = 11;
+    const size_t BUCKETS_PER_WINDOW = 1 << BITS_PER_WINDOW;
+
+    // 수신 버퍼 구조체 (명시적으로 추론된 BigInt 타입 사용)
+    struct FpgaRawAffine {
+        BaseBigIntT X;
+        BaseBigIntT Y;
+    };
+    
+    std::vector<std::vector<FpgaRawAffine>> fpga_buckets(
+        WINDOW_COUNT, std::vector<FpgaRawAffine>(BUCKETS_PER_WINDOW)
+    );
+
+    // =====================================================================
+    // TODO: SG-DMA 읽기/쓰기 및 인터럽트 대기
+    // =====================================================================
+
+    // ---------------------------------------------------------------------
+    // 2️⃣ [FPGA -> Host 복원] 가속기 버킷 포맷을 libff 도메인으로 인코딩
+    // ---------------------------------------------------------------------
+    // 💡 거듭제곱 연산자 수정 및 inverse 적용
+    static const BaseFieldT inv_R255 = (BaseFieldT(2) ^ 255).inverse();
+    
+    std::vector<std::vector<G1_PointT>> window_buckets(
+        WINDOW_COUNT, std::vector<G1_PointT>(BUCKETS_PER_WINDOW, G1_PointT::zero())
+    );
+
+    #ifdef MULTICORE
+    #pragma omp parallel for collapse(2)
+    #endif
+    for (size_t w = 0; w < WINDOW_COUNT; ++w) {
+        for (size_t b = 1; b < BUCKETS_PER_WINDOW; ++b) {
+            if (fpga_buckets[w][b].X.is_zero() && fpga_buckets[w][b].Y.is_zero()) {
+                continue;
+            }
+
+            BaseFieldT restored_X = BaseFieldT(fpga_buckets[w][b].X) * inv_R255;
+            BaseFieldT restored_Y = BaseFieldT(fpga_buckets[w][b].Y) * inv_R255;
+
+            window_buckets[w][b] = G1_PointT(restored_X, restored_Y, BaseFieldT::one());
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // 3️⃣ [소프트웨어 리덕션] CPU 멀티코어를 활용한 Pippenger 버킷 누적 루프
+    // ---------------------------------------------------------------------
+    std::vector<G1_PointT> window_results(WINDOW_COUNT, G1_PointT::zero());
+
+    #ifdef MULTICORE
+    #pragma omp parallel for
+    #endif
+    for (size_t w = 0; w < WINDOW_COUNT; ++w) {
+        G1_PointT running_sum = G1_PointT::zero();
+        G1_PointT window_sum = G1_PointT::zero();
+        bool running_sum_nonzero = false;
+        bool window_sum_nonzero = false;
+
+        for (size_t b = BUCKETS_PER_WINDOW - 1; b > 0; --b) {
+            if (!window_buckets[w][b].is_zero()) {
+                if (running_sum_nonzero) {
+                    running_sum = running_sum + window_buckets[w][b];
+                } else {
+                    running_sum = window_buckets[w][b];
+                    running_sum_nonzero = true;
+                }
+            }
+
+            if (running_sum_nonzero) {
+                if (window_sum_nonzero) {
+                    window_sum = window_sum + running_sum;
+                } else {
+                    window_sum = running_sum;
+                    window_sum_nonzero = true;
+                }
+            }
+        }
+        window_results[w] = window_sum;
+    }
+
+    // ---------------------------------------------------------------------
+    // 4️⃣ [최종 어그리게이션] Horner's Method를 적용한 윈도우 간 비트 병합
+    // ---------------------------------------------------------------------
+    G1_PointT final_result = G1_PointT::zero();
+    bool final_nonzero = false;
+
+    for (size_t w = WINDOW_COUNT - 1; w < WINDOW_COUNT; --w) {
+        if (final_nonzero) {
+            for (size_t shift = 0; shift < BITS_PER_WINDOW; ++shift) {
+                final_result = final_result.dbl();
+            }
+        }
+
+        if (!window_results[w].is_zero()) {
+            if (final_nonzero) {
+                final_result = final_result + window_results[w];
+            } else {
+                final_result = window_results[w];
+                final_nonzero = true;
+            }
+        }
+    }
+
+    return final_result;
+}
+
 template<typename T, typename FieldT, multi_exp_method Method>
 T multi_exp(typename std::vector<T>::const_iterator vec_start,
             typename std::vector<T>::const_iterator vec_end,
@@ -410,59 +564,6 @@ T multi_exp(typename std::vector<T>::const_iterator vec_start,
             const size_t chunks)
 {
     const size_t total = vec_end - vec_start;
-
-    // new CODE
-    if (total > 100) { 
-        std::string type_name = typeid(T).name();
-        
-        // GCC 환경에서 alt_bn128_G1 타입은 이름에 "_G1"이 포함되어 맹글링됩니다.
-        if (type_name.find("_G1") != std::string::npos) {
-            std::cout << "\n=======================================================" << std::endl;
-            std::cout << " 🎯 [FPGA G1 MSM Target] 정확히 G1 MSM 데이터만 포착했습니다!" << std::endl;
-            std::cout << "  - 가로챈 총 데이터 개수: " << total << " 개" << std::endl;
-            std::cout << "=======================================================" << std::endl;
-
-            // Verilog 테스트벤치에서 $readmemh로 바로 읽을 수 있는 16진수 파일 생성
-            std::ofstream scalar_out("tb_msm_scalars.hex");
-            std::ofstream point_out("tb_msm_points.hex");
-
-            for (size_t i = 0; i < total; ++i) {
-                auto current_scalar = *(scalar_start + i);
-                auto current_point = *(vec_start + i);
-
-                // 1. 256비트 스칼라 추출 (64비트 x 4 limbs)
-                // 하드웨어 규격(MSB -> LSB)에 맞춰 한 줄의 대형 16진수 문자열로 포맷팅
-                auto s_limbs = current_scalar.as_bigint().data;
-                char scalar_hex[128];
-                sprintf(scalar_hex, "%016lx%016lx%016lx%016lx", s_limbs[3], s_limbs[2], s_limbs[1], s_limbs[0]);
-                scalar_out << scalar_hex << "\n";
-
-                // 2. 768비트 G1 점(Projective 좌표계 X, Y, Z) 추출
-                // 컴파일 에러를 피하기 위해 포인터 캐스팅으로 데이터 블록(96바이트) 직접 접근
-                // alt_bn128_G1 내부 메모리 구조: X(4limbs), Y(4limbs), Z(4limbs)가 연속 배치됨
-                const uint64_t* p_limbs = reinterpret_cast<const uint64_t*>(&current_point);
-                
-                char point_hex[512];
-                // X, Y, Z 각각 MSB부터 LSB 순서대로 정렬하여 출력
-                sprintf(point_hex, "%016lx%016lx%016lx%016lx_%016lx%016lx%016lx%016lx_%016lx%016lx%016lx%016lx",
-                        p_limbs[3],  p_limbs[2],  p_limbs[1],  p_limbs[0],   // X 좌표 (256-bit)
-                        p_limbs[7],  p_limbs[6],  p_limbs[5],  p_limbs[4],   // Y 좌표 (256-bit)
-                        p_limbs[11], p_limbs[10], p_limbs[9],  p_limbs[8]);  // Z 좌표 (256-bit)
-                point_out << point_hex << "\n";
-
-                // 터미널에는 샘플로 상위 3개만 가볍게 뿌려주기
-                if (i < 3) {
-                    printf(" [%zu] Scalar: %s... | Point X_LSB: 0x%016lx\n", i, scalar_hex + 48, p_limbs[0]);
-                }
-            }
-            scalar_out.close();
-            point_out.close();
-            
-            std::cout << " 💾 [완료] tb_msm_scalars.hex 및 tb_msm_points.hex 저장 완료!" << std::endl;
-            std::cout << "=======================================================\n" << std::endl;
-        }
-    }
-
     if ((total < chunks) || (chunks == 1))
     {
         // no need to split into "chunks", can call implementation directly
@@ -496,12 +597,14 @@ T multi_exp(typename std::vector<T>::const_iterator vec_start,
     return final;
 }
 
+
 template<typename T, typename FieldT, multi_exp_method Method>
 T multi_exp_with_mixed_addition(typename std::vector<T>::const_iterator vec_start,
                                 typename std::vector<T>::const_iterator vec_end,
                                 typename std::vector<FieldT>::const_iterator scalar_start,
                                 typename std::vector<FieldT>::const_iterator scalar_end,
-                                const size_t chunks)
+                                const size_t chunks, 
+                                bool useFPGA)
 {
 #ifndef NDEBUG
     assert(std::distance(vec_start, vec_end) == std::distance(scalar_start, scalar_end));
@@ -549,10 +652,15 @@ T multi_exp_with_mixed_addition(typename std::vector<T>::const_iterator vec_star
     print_indent(); printf("* Elements of w skipped: %zu (%0.2f%%)\n", num_skip, 100.*num_skip/(num_skip+num_add+num_other));
     print_indent(); printf("* Elements of w processed with special addition: %zu (%0.2f%%)\n", num_add, 100.*num_add/(num_skip+num_add+num_other));
     print_indent(); printf("* Elements of w remaining: %zu (%0.2f%%)\n", num_other, 100.*num_other/(num_skip+num_add+num_other));
-
     leave_block("Process scalar vector");
 
-    return acc + multi_exp<T, FieldT, Method>(g.begin(), g.end(), p.begin(), p.end(), chunks);
+    // 하드웨어 라우팅 분기 
+    if(useFPGA){
+        return acc + multi_exp_g1_prove_fpga<T, FieldT>(g.begin(), g.end(), p.begin(), p.end(),chunks);
+    }
+    else{
+        return acc + multi_exp<T, FieldT, Method>(g.begin(), g.end(), p.begin(), p.end(), chunks);
+    }
 }
 
 template <typename T>
@@ -777,3 +885,4 @@ void batch_to_special(std::vector<T> &vec)
 } // libff
 
 #endif // MULTIEXP_TCC_
+
